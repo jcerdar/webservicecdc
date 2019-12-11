@@ -30,38 +30,40 @@ class local_webservice_external extends external_api {
      */
     public static function webservice_surveycheck_parameters() {
         return new external_function_parameters(
-                array(
-                	'initialdate' => new external_value(PARAM_INT, 'the initial date from where you want to get the attendance', VALUE_DEFAULT, 0),
-                	'enddate' => new external_value(PARAM_INT, 'the last day from where you want to get the attendance', VALUE_DEFAULT, 0),
-                )
+            array(
+                'initialdate' => new external_value(PARAM_INT, 'the initial date from where you want to get the attendance', VALUE_DEFAULT, 0),
+                'enddate' => new external_value(PARAM_INT, 'the last day from where you want to get the attendance', VALUE_DEFAULT, 0),
+                'responseid' => new external_value(PARAM_INT, 'starter responseid', VALUE_DEFAULT, 0),
+            )
         );
     }
 
     /**
      * Returns presence of paperattendance
-     * @return json presence of paperattendance 
+     * @return json presence of paperattendance
      */
-    public static function webservice_surveycheck($initialdate = 0, $enddate = 0) {
+    public static function webservice_surveycheck($initialdate = 0, $enddate = 0, $responseid = 0) {
         global $DB;
-        
+
         //Parameter validation
         $params = self::validate_parameters(self::webservice_surveycheck_parameters(),
-            array('initialdate' => $initialdate, 'enddate' => $enddate));
-        $query = 'SELECT q.id as questionnaireid, c.id as courseid, q.opendate, q.closedate FROM {course} AS c
+            array('initialdate' => $initialdate, 'enddate' => $enddate, 'responseid' => $responseid));
+        $query = 'SELECT q.id as questionnaireid, c.id as courseid, q.opendate, q.closedate, qr.id responseid FROM {course} AS c
                         INNER JOIN {course_modules} AS cm ON (c.id = cm.course)
                         INNER JOIN {modules} AS m ON (cm.module = m.id AND m.name = ?)
                         INNER JOIN {questionnaire} AS q ON (c.id = q.course AND q.closedate < ?)
                         INNER JOIN {questionnaire_response} AS qr ON (q.id = qr.questionnaireid)
-                        WHERE q.intro like "<ul>%" AND c.category != 39 group by q.id';
+                        WHERE q.intro like "<ul>%" AND c.category != 39 AND qr.id > ? group by q.id';
         $parameters = array(
             "questionnaire",
             time(),
+            $responseid,
         );
-        
+
         $questionnaires = $DB->get_records_sql($query, $parameters);
         $return = array();
         $prefix = '';
-        echo '[';
+        $json = '[';
         foreach($questionnaires as $quetionnaire){
             $textresponses = $DB->get_records_sql('SELECT qrt.id as id, cc.name as category, c.fullname as coursename, q.name as questionnaire, qqt.response_table, qq.length, qq.position, q.intro as info, qq.name as sectioncategory, qq.content as question, qrt.response as response FROM {questionnaire} AS q
                                                                 INNER JOIN {course} AS c ON (c.id = q.course AND c.id = ? AND q.id = ?)
@@ -69,7 +71,7 @@ class local_webservice_external extends external_api {
                                                                 INNER JOIN {questionnaire_question} AS qq ON (qq.surveyid = q.id)
                                                                 INNER JOIN {questionnaire_response_text} AS qrt ON (qrt.question_id = qq.id)
                                                                 INNER JOIN {questionnaire_question_type} AS qqt ON (qqt.typeid = qq.type_id)
-                                                                WHERE q.intro like "<ul>%" AND cc.id != 39', array($quetionnaire->courseid,$quetionnaire->questionnaireid));
+                                                                WHERE q.intro like "<ul>%" AND cc.id != 39 and qrt.response_id = ?', array($quetionnaire->courseid,$quetionnaire->questionnaireid,$quetionnaire->responseid));
             $rankresponses = $DB->get_records_sql('SELECT qrr.id as id, cc.name as category, c.fullname as coursename, q.name as questionnaire, qqt.response_table, qq.length, qq.position,q.intro as info, qq.name as sectioncategory, qqc.content as question, qrr.rankvalue+1 as response FROM {questionnaire} AS q
                                                                 INNER JOIN {course} AS c ON (c.id = q.course AND c.id = ? AND q.id = ?)
                                                                 INNER JOIN {course_categories} AS cc ON (cc.id = c.category)
@@ -77,21 +79,21 @@ class local_webservice_external extends external_api {
                                                                 INNER JOIN {questionnaire_quest_choice} AS qqc ON (qqc.question_id = qq.id)
                                                                 INNER JOIN {questionnaire_response_rank} AS qrr ON (qrr.choice_id = qqc.id)
                                                                 INNER JOIN {questionnaire_question_type} AS qqt ON (qqt.typeid = qq.type_id)
-                                                                WHERE q.intro like "<ul>%" AND cc.id != 39', array($quetionnaire->courseid,$quetionnaire->questionnaireid));
+                                                                WHERE q.intro like "<ul>%" AND cc.id != 39 and qrr.response_id = ?', array($quetionnaire->courseid,$quetionnaire->questionnaireid,$quetionnaire->responseid));
             $dateresponses = $DB->get_records_sql('SELECT qrd.id as id, cc.name as category, c.fullname as coursename, q.name as questionnaire, qqt.response_table, qq.length, qq.position,q.intro as info, qq.name as sectioncategory, qq.content as question, qrd.response as response FROM {questionnaire} AS q
                                                                 INNER JOIN {course} AS c ON (c.id = q.course AND c.id = ? AND q.id = ?)
                                                                 INNER JOIN {course_categories} AS cc ON (cc.id = c.category)
                                                                 INNER JOIN {questionnaire_question} AS qq ON (qq.surveyid = q.id)
                                                                 INNER JOIN {questionnaire_response_date} AS qrd ON (qrd.question_id = qq.id)
                                                                 INNER JOIN {questionnaire_question_type} AS qqt ON (qqt.typeid = qq.type_id)
-                                                                WHERE q.intro like "<ul>%" AND cc.id != 39', array($quetionnaire->courseid,$quetionnaire->questionnaireid));
+                                                                WHERE q.intro like "<ul>%" AND cc.id != 39 and qrd.response_id = ?', array($quetionnaire->courseid,$quetionnaire->questionnaireid,$quetionnaire->responseid));
             $boolresponses = $DB->get_records_sql('SELECT qrd.id as id, cc.name as category, c.fullname as coursename, q.name as questionnaire, qqt.response_table, qq.length, qq.position,q.intro as info, qq.name as sectioncategory, qq.content as question, qrd.choice_id as response FROM {questionnaire} AS q
                                                                 INNER JOIN {course} AS c ON (c.id = q.course AND c.id = ? AND q.id = ?)
                                                                 INNER JOIN {course_categories} AS cc ON (cc.id = c.category)
                                                                 INNER JOIN {questionnaire_question} AS qq ON (qq.surveyid = q.id)
                                                                 INNER JOIN {questionnaire_response_bool} AS qrd ON (qrd.question_id = qq.id)
                                                                 INNER JOIN {questionnaire_question_type} AS qqt ON (qqt.typeid = qq.type_id)
-                                                                WHERE q.intro like "<ul>%" AND cc.id != 39', array($quetionnaire->courseid,$quetionnaire->questionnaireid));
+                                                                WHERE q.intro like "<ul>%" AND cc.id != 39 and qrd.response_id = ?', array($quetionnaire->courseid,$quetionnaire->questionnaireid,$quetionnaire->responseid));
             $singleresponses = $DB->get_records_sql('SELECT qrs.id as id, cc.name as category, c.fullname as coursename, q.name as questionnaire, qqt.response_table, qq.length, qq.position,q.intro as info, qq.name as sectioncategory, qq.content as question, qqc.content as response FROM {questionnaire} AS q
                                                                 INNER JOIN {course} AS c ON (c.id = q.course AND c.id = ? AND q.id = ?)
                                                                 INNER JOIN {course_categories} AS cc ON (cc.id = c.category)
@@ -99,7 +101,7 @@ class local_webservice_external extends external_api {
                                                                 INNER JOIN {questionnaire_quest_choice} AS qqc ON (qqc.question_id = qq.id)
                                                                 INNER JOIN {questionnaire_resp_single} AS qrs ON (qrs.choice_id = qqc.id)
                                                                 INNER JOIN {questionnaire_question_type} AS qqt ON (qqt.typeid = qq.type_id)
-                                                                WHERE q.intro like "<ul>%" AND cc.id != 39', array($quetionnaire->courseid,$quetionnaire->questionnaireid));
+                                                                WHERE q.intro like "<ul>%" AND cc.id != 39 and qrs.response_id = ?', array($quetionnaire->courseid,$quetionnaire->questionnaireid,$quetionnaire->responseid));
             $multiresponses = $DB->get_records_sql('SELECT qrm.id as id, cc.name as category, c.fullname as coursename, q.name as questionnaire, qqt.response_table, qq.length, qq.position,q.intro as info, qq.name as sectioncategory, qq.content as question, qqc.content as response FROM {questionnaire} AS q
                                                                 INNER JOIN {course} AS c ON (c.id = q.course AND c.id = ? AND q.id = ?)
                                                                 INNER JOIN {course_categories} AS cc ON (cc.id = c.category)
@@ -107,7 +109,7 @@ class local_webservice_external extends external_api {
                                                                 INNER JOIN {questionnaire_quest_choice} AS qqc ON (qqc.question_id = qq.id)
                                                                 INNER JOIN {questionnaire_resp_multiple} AS qrm ON (qrm.choice_id = qqc.id)
                                                                 INNER JOIN {questionnaire_question_type} AS qqt ON (qqt.typeid = qq.type_id)
-                                                                WHERE q.intro like "<ul>%" AND cc.id != 39', array($quetionnaire->courseid,$quetionnaire->questionnaireid));
+                                                                WHERE q.intro like "<ul>%" AND cc.id != 39 and qrm.response_id = ?', array($quetionnaire->courseid,$quetionnaire->questionnaireid,$quetionnaire->responseid));
             $result = array_merge($textresponses,$rankresponses,$dateresponses,$boolresponses,$singleresponses,$multiresponses);
             foreach($result as $position => $response){
                 $result[$position]->question = strip_tags($response->question);
@@ -123,7 +125,7 @@ class local_webservice_external extends external_api {
                 foreach($explode as $key => $exploded){
                     $info = explode(":",$exploded);
                     $explode[$key] = $info[1];
-                    
+
                 }
                 $obj = new stdClass();
                 $obj->fecha = $explode[5];
@@ -140,7 +142,7 @@ class local_webservice_external extends external_api {
                 }else{
                     $obj->responseint = '';
                     $obj->responsetext = $response->response;
-                    
+
                 }
                 $obj->programa = $explode[0];
                 $obj->cliente = $explode[1];
@@ -182,14 +184,17 @@ class local_webservice_external extends external_api {
                     $obj->tiporp = 'Texto Comentario';
                     $obj->idvalortipo = 0;
                 }
-                
+                $obj->responseid = $quetionnaire->responseid;
                 unset($obj->info);
-                echo $prefix, json_encode( $obj);
+                $json .= $prefix. json_encode( $obj);
                 $prefix = ',';
                 $oldposition = $response->position;
             }
         }
-        echo ']';
+        $json .= ']';
+        echo $json;
+        //print_r($json);
+        return null;
     }
 
     /**
